@@ -1,40 +1,19 @@
 {
-  "name": "mobile-automation-mcp",
+  "name": "android-control",
   "version": "1.0.0",
-  "description": "MCP server for Android mobile automation via Appium",
-  "type": "module",
-  "main": "dist/index.js",
+  "description": "Visible Android automation via ADB + scrcpy for human-in-the-loop control from OpenCode",
+  "private": true,
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
-    "test": "vitest run",
-    "lint": "eslint src --ext .ts",
-    "format": "prettier --write src"
+    "setup": "./setup.sh",
+    "test": "echo \"No automated tests yet - manual testing via ./mobile\""
   },
   "keywords": [
-    "mcp",
-    "appium",
     "android",
+    "adb",
+    "scrcpy",
     "automation",
-    "opencode"
+    "opencode",
+    "mobile"
   ],
-  "license": "MIT",
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "appium": "^2.10.0",
-    "webdriverio": "^9.0.0",
-    "zod": "^3.23.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.72.0",
-    "@typescript-eslint/parser": "^8.72.0",
-    "eslint": "^9.0.0",
-    "prettier": "^3.3.0",
-    "tsx": "^4.16.0",
-    "typescript": "^5.5.0",
-    "typescript-eslint": "^8.72.0",
-    "vitest": "^2.0.0"
-  }
+  "license": "MIT"
 }
