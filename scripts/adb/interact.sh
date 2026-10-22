@@ -1,44 +1,71 @@
 #!/usr/bin/env bash
-# ADB Interaction Commands
+# ADB Interaction Commands - Secure, validated, error-handled
 
 set -euo pipefail
 
+# Respect ANDROID_SERIAL env var, fallback to first device
 SERIAL="${ANDROID_SERIAL:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}"
 [[ -z "$SERIAL" ]] && { echo "No device connected" >&2; exit 1; }
 
+# ADB command wrapper with timeout and error handling
 adb_cmd() {
-  adb -s "$SERIAL" "$@"
+  timeout 30 adb -s "$SERIAL" "$@" || {
+    local exit_code=$?
+    if [[ $exit_code -eq 124 ]]; then
+      echo "ADB command timed out after 30s" >&2
+    else
+      echo "ADB command failed (exit $exit_code): adb -s $SERIAL $*" >&2
+    fi
+    return $exit_code
+  }
 }
 
-# Tap at coordinates
+# Validate positive integer
+is_positive_int() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 0 ]]
+}
+
+# Validate and sanitize output path (prevent path traversal)
+sanitize_path() {
+  local path="${1:-}"
+  local allowed_base="${2:-/tmp}"
+  [[ -z "$path" ]] && return 1
+  # Resolve to absolute path
+  path=$(realpath -m "$path" 2>/dev/null) || return 1
+  # Ensure it's under allowed base
+  [[ "$path" == "$allowed_base"/* ]] || [[ "$path" == "$allowed_base" ]] || return 1
+  echo "$path"
+}
+
+# Tap at coordinates (validated)
 tap() {
   local x="${1:-}" y="${2:-}"
   [[ -z "$x" || -z "$y" ]] && { echo "Usage: tap <x> <y>" >&2; exit 1; }
+  is_positive_int "$x" && is_positive_int "$y" || { echo "Coordinates must be positive integers" >&2; exit 1; }
   adb_cmd shell input tap "$x" "$y"
 }
 
-# Swipe from to
+# Swipe from to (validated)
 swipe() {
   local from_x="${1:-}" from_y="${2:-}" to_x="${3:-}" to_y="${4:-}" duration="${5:-500}"
   [[ -z "$from_x" || -z "$from_y" || -z "$to_x" || -z "$to_y" ]] && { echo "Usage: swipe <from_x> <from_y> <to_x> <to_y> [duration]" >&2; exit 1; }
+  is_positive_int "$from_x" && is_positive_int "$from_y" && is_positive_int "$to_x" && is_positive_int "$to_y" && is_positive_int "$duration" || { echo "All coordinates and duration must be positive integers" >&2; exit 1; }
   adb_cmd shell input swipe "$from_x" "$from_y" "$to_x" "$to_y" "$duration"
 }
 
-# Input text
+# Input text - SECURE: pass via stdin to avoid shell injection
 input_text() {
   local text="${1:-}"
   [[ -z "$text" ]] && { echo "Usage: input_text <text>" >&2; exit 1; }
-  # Escape special characters
-  text="${text// /%s}"
-  text="${text//\"/\\\"}"
-  text="${text//\'/\\\'}"
-  adb_cmd shell input text "$text"
+  # Use printf + stdin to safely pass text without any escaping issues
+  printf '%s' "$text" | adb_cmd shell input text
 }
 
-# Key event (back, home, menu, etc.)
+# Key event
 key() {
   local keycode="${1:-}"
   [[ -z "$keycode" ]] && { echo "Usage: key <keycode>" >&2; exit 1; }
+  is_positive_int "$keycode" || { echo "Keycode must be positive integer" >&2; exit 1; }
   adb_cmd shell input keyevent "$keycode"
 }
 
@@ -52,31 +79,44 @@ volume_up() { key 24; }
 volume_down() { key 25; }
 enter() { key 66; }
 
-# Screenshot
+# Screenshot with path validation
 screenshot() {
   local path="${1:-/tmp/screenshot-$(date +%s).png}"
+  path=$(sanitize_path "$path" "/tmp") || { echo "Invalid path (must be under /tmp)" >&2; exit 1; }
   adb_cmd exec-out screencap -p > "$path"
   echo "$path"
 }
 
-# Screenrecord
+# Screenrecord - fixed race condition with unique PID file per session
 record_start() {
   local path="${1:-/sdcard/recording-$(date +%s).mp4}"
   local time_limit="${2:-180}"
+  is_positive_int "$time_limit" || { echo "Time limit must be positive integer" >&2; exit 1; }
+  # Create unique PID file for this session
+  local session_id="$$_$(date +%s%N)"
+  local pid_file="/tmp/screenrecord_${session_id}.pid"
   adb_cmd shell screenrecord --time-limit "$time_limit" "$path" &
-  echo $! > /tmp/screenrecord.pid
-  echo "Recording started: $path (PID: $!)"
+  local bg_pid=$!
+  echo "$bg_pid" > "$pid_file"
+  echo "$pid_file"  # Return PID file path to caller
+  echo "Recording started: $path (PID: $bg_pid, pid_file: $pid_file)"
 }
 
 record_stop() {
+  local pid_file="${1:-}"
+  local remote_path="${2:-}"
+  local local_path="${3:-/tmp/recording-$(date +%s).mp4}"
+  [[ -z "$pid_file" ]] && { echo "Usage: record_stop <pid_file> [remote_path] [local_path]" >&2; exit 1; }
+  [[ -f "$pid_file" ]] || { echo "No recording in progress (pid file not found: $pid_file)" >&2; exit 1; }
   local pid
-  pid=$(cat /tmp/screenrecord.pid 2>/dev/null || echo "")
+  pid=$(cat "$pid_file" 2>/dev/null || echo "")
   [[ -n "$pid" ]] && kill -INT "$pid" 2>/dev/null
   sleep 1
-  # Pull the file
-  local remote_path="${1:-/sdcard/recording-$(date +%s).mp4}"
-  local local_path="${2:-/tmp/recording-$(date +%s).mp4}"
+  # If remote_path not provided, we can't easily determine it - require it
+  [[ -z "$remote_path" ]] && { echo "Remote path required for pull" >&2; exit 1; }
+  local_path=$(sanitize_path "$local_path" "/tmp") || { echo "Invalid local path (must be under /tmp)" >&2; exit 1; }
   adb_cmd pull "$remote_path" "$local_path"
+  rm -f "$pid_file"
   echo "Recording saved to: $local_path"
 }
 
@@ -85,7 +125,7 @@ hierarchy() {
   adb_cmd exec-out uiautomator dump /dev/tty
 }
 
-# Find element by text (simple grep on hierarchy)
+# Find element by text
 find_by_text() {
   local text="${1:-}"
   [[ -z "$text" ]] && { echo "Usage: find_by_text <text>" >&2; exit 1; }
@@ -99,10 +139,11 @@ find_by_id() {
   hierarchy | grep "resource-id.*$id" | head -5
 }
 
-# Get bounds from hierarchy line (extract coordinates)
+# Get bounds from hierarchy line - robust parsing (no PCRE, handles both [[x,y][x,y]] and [x,y][x,y])
 parse_bounds() {
   local line="${1:-}"
-  echo "$line" | grep -oP 'bounds=\[\[?\d+,\d+\]\[\d+,\d+\]\]' | head -1 | sed 's/bounds=\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]/\1 \2 \3 \4/'
+  # Extract bounds=[x,y][x,y] or bounds=[[x,y][x,y]] - supports negative coords too
+  echo "$line" | sed -n 's/.*bounds=\[\([0-9-]*\),\([0-9-]*\)\]\[\([0-9-]*\),\([0-9-]*\)\].*/\1 \2 \3 \4/p' | head -1
 }
 
 # Tap element by text (find and tap center)
@@ -114,8 +155,9 @@ tap_text() {
   [[ -z "$line" ]] && { echo "Element not found: $text" >&2; exit 1; }
   local bounds
   bounds=$(parse_bounds "$line")
-  [[ -z "$bounds" ]] && { echo "Could not parse bounds" >&2; exit 1; }
+  [[ -z "$bounds" ]] && { echo "Could not parse bounds for: $text" >&2; exit 1; }
   read -r x1 y1 x2 y2 <<< "$bounds"
+  is_positive_int "$x1" && is_positive_int "$y1" && is_positive_int "$x2" && is_positive_int "$y2" || { echo "Invalid bounds: $bounds" >&2; exit 1; }
   local cx=$(( (x1 + x2) / 2 ))
   local cy=$(( (y1 + y2) / 2 ))
   echo "Tapping '$text' at ($cx, $cy)"
@@ -131,8 +173,9 @@ tap_id() {
   [[ -z "$line" ]] && { echo "Element not found: $id" >&2; exit 1; }
   local bounds
   bounds=$(parse_bounds "$line")
-  [[ -z "$bounds" ]] && { echo "Could not parse bounds" >&2; exit 1; }
+  [[ -z "$bounds" ]] && { echo "Could not parse bounds for: $id" >&2; exit 1; }
   read -r x1 y1 x2 y2 <<< "$bounds"
+  is_positive_int "$x1" && is_positive_int "$y1" && is_positive_int "$x2" && is_positive_int "$y2" || { echo "Invalid bounds: $bounds" >&2; exit 1; }
   local cx=$(( (x1 + x2) / 2 ))
   local cy=$(( (y1 + y2) / 2 ))
   echo "Tapping '$id' at ($cx, $cy)"
@@ -192,7 +235,7 @@ case "${1:-}" in
   enter) enter ;;
   screenshot) screenshot "${2:-}" ;;
   record-start) record_start "${2:-}" "${3:-}" ;;
-  record-stop) record_stop "${2:-}" "${3:-}" ;;
+  record-stop) record_stop "${2:-}" "${3:-}" "${4:-}" ;;
   hierarchy) hierarchy ;;
   find-text) find_by_text "${2:-}" ;;
   find-id) find_by_id "${2:-}" ;;

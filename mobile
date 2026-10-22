@@ -8,8 +8,21 @@ ADB_SCRIPT="$SCRIPT_DIR/scripts/adb/interact.sh"
 DEVICE_SCRIPT="$SCRIPT_DIR/scripts/adb/device.sh"
 SCRCPY_SCRIPT="$SCRIPT_DIR/scripts/scrcpy/launch.sh"
 
-# Export serial for all scripts
-export ANDROID_SERIAL="${ANDROID_SERIAL:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}"
+# Check dependencies upfront
+check_deps() {
+  local missing=()
+  command -v adb >/dev/null 2>&1 || missing+=("adb (android-platform-tools)")
+  command -v scrcpy >/dev/null 2>&1 || missing+=("scrcpy")
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "Missing dependencies: ${missing[*]}" >&2
+    echo "Run ./setup.sh to install" >&2
+    exit 1
+  fi
+}
+
+# Export serial for all scripts (respects existing ANDROID_SERIAL)
+export ANDROID_SERIAL="${ANDROID_SERIAL:-$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1; exit}')}"
+[[ -z "$ANDROID_SERIAL" ]] && echo "Warning: No device detected. Connect device with USB debugging enabled." >&2
 
 usage() {
   cat <<EOF
@@ -21,7 +34,9 @@ Device:
   device serial           Get device serial
   device model            Get device model
   device version          Get Android version
+  device sdk              Get SDK version
   device resolution       Get screen resolution
+  device density          Get screen density
   device list             List all devices
 
 Screen (scrcpy):
@@ -32,7 +47,7 @@ Screen (scrcpy):
 
 Interaction:
   tap <x> <y>             Tap coordinates
-  swipe <x1> <y1> <x2> <y2> [duration]  Swipe
+  swipe <x1> <y1> <x2> <y2> [ms]  Swipe (default 500ms)
   input <text>            Type text
   back                    Back button
   home                    Home button
@@ -45,35 +60,39 @@ Interaction:
   key <keycode>           Send keycode
 
 Screen capture:
-  screenshot [path]       Take screenshot
-  record-start [path] [time]  Start recording
-  record-stop [remote] [local]  Stop recording
+  screenshot [path]       Take screenshot (default /tmp/screenshot-TIME.png)
+  record-start [path] [sec]  Start recording (default 180s, returns PID file)
+  record-stop <pid_file> [remote] [local]  Stop & pull recording
 
 UI inspection:
   hierarchy               Dump UI hierarchy
-  find-text <text>        Find element by text
+  find-text <text>        Find elements containing text
   find-id <id>            Find element by resource-id
-  tap-text <text>         Tap element by text
-  tap-id <id>             Tap element by resource-id
+  tap-text <text>         Find by text AND tap center
+  tap-id <id>             Find by id AND tap center
 
 Apps:
   launch <package> [activity]  Launch app
-  kill <package>            Kill app
+  kill <package>            Force stop app
   clear <package>           Clear app data
   packages [filter]         List packages
-  activity                  Get current activity
+  activity                  Get current foreground activity
 
 Examples:
   $0 view                           # Start mirroring
-  $0 launch com.matricks            # Open Matricks
-  $0 tap-text "Daily Challenge"     # Tap button by text
+  $0 launch com.instagram.android   # Open Instagram
+  $0 tap-text "Login"               # Tap button by text
   $0 swipe 540 1800 540 600         # Swipe up
-  $0 screenshot /tmp/matricks.png   # Save screenshot
+  $0 screenshot /tmp/app.png        # Save screenshot
+  $0 find-text "Continue"           # Find elements
 
 Environment:
   ANDROID_SERIAL    Device serial (auto-detected if not set)
 EOF
 }
+
+# Check dependencies first
+check_deps
 
 # Dispatch
 case "${1:-}" in
