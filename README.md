@@ -5,7 +5,10 @@ Lightweight Android automation for **human-in-the-loop** control. You type comma
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  OpenCode Chat                                              │
-│  You: "open Matricks and do daily challenge"               │
+│  You: "open Instagram and like 3 posts"                    │
+│  You: "fill this form and submit"                          │
+│  You: "scroll TikTok until you see cats"                   │
+│  You: "test the checkout flow"                             │
 │  Agent: [runs commands, you watch live]                    │
 └─────────────────────────┬───────────────────────────────────┘
                           │
@@ -32,10 +35,12 @@ adb devices
 # 4. Start screen mirroring (opens window on your desktop)
 ./mobile view
 
-# 5. In another terminal, control the device
-./mobile launch com.matricks
-./mobile tap-text "Daily Challenge"
-./mobile swipe 540 1800 540 600
+# 5. In another terminal, control any app
+./mobile launch com.instagram.android
+./mobile tap-text "Search"
+./mobile input "cats"
+./mobile tap-text "Reels"
+# ... anything you want
 ```
 
 ## Commands
@@ -85,44 +90,85 @@ adb devices
 
 ### Apps
 ```bash
-./mobile launch <package> [activity]  # Launch app
+./mobile launch <package> [activity]  # Launch any app
 ./mobile kill <package>               # Force stop
 ./mobile clear <package>              # Clear data
 ./mobile packages [filter]            # List packages
 ./mobile activity                     # Current foreground activity
 ```
 
-## Examples
+## Generic Examples
 
-### Matricks Daily Challenge
+### Social Media Automation
 ```bash
-# Start mirroring (keep this running)
-./mobile view
+# Instagram - like posts
+./mobile launch com.instagram.android
+./mobile tap-text "Search"
+./mobile input "nature"
+./mobile tap-text "Reels"
+# scroll and like...
+./mobile swipe 540 1800 540 600 800
 
-# In another terminal:
-./mobile launch com.matricks
-# Wait for app to load...
-./mobile tap-text "Daily Challenge"
-# Solve puzzle...
-./mobile swipe 540 1800 540 600 800  # Swipe up slowly
-./mobile tap 540 1200                # Tap specific coordinate
+# TikTok - scroll feed
+./mobile launch com.zhiliaoapp.musically
+./mobile swipe 540 1800 540 600 500  # next video
+
+# Twitter/X - post tweet
+./mobile launch com.twitter.android
+./mobile tap-id "com.twitter.android:id/compose_tweet"
+./mobile input "Hello from mobile automation!"
+./mobile tap-text "Post"
 ```
 
-### Generic Flow
+### Form Filling & Testing
 ```bash
-# 1. See what's on screen
+# Fill any form
+./mobile launch com.example.app
+./mobile tap-id "email_field"
+./mobile input "user@example.com"
+./mobile tap-id "password_field"
+./mobile input "securepassword123"
+./mobile tap-text "Sign In"
+
+# Test checkout flow
+./mobile launch com.shop.app
+./mobile tap-text "Add to Cart"
+./mobile tap-text "Checkout"
+./mobile tap-id "address_field"
+./mobile input "123 Main St"
+./mobile tap-text "Place Order"
+```
+
+### Debugging & Exploration
+```bash
+# See what's on screen right now
 ./mobile hierarchy | grep -i "button"
 
-# 2. Tap by text
+# Find any element by text
+./mobile find-text "Continue"
+./mobile find-text "Skip"
+./mobile find-text "Allow"
+
+# Find by resource-id (more precise)
+./mobile find-id "btn_continue"
+./mobile find-id "permission_allow_button"
+
+# Tap whatever you found
 ./mobile tap-text "Continue"
+./mobile tap-id "btn_continue"
+```
 
-# 3. Input text
-./mobile input "my password"
+### App Management
+```bash
+# Fresh start for testing
+./mobile clear com.example.app
+./mobile launch com.example.app
 
-# 4. Tap login button
-./mobile tap-id "btn_login"
+# Check what's installed
+./mobile packages "google"
+./mobile packages "facebook"
 
-# 5. Verify success
+# See current activity
 ./mobile activity
 ```
 
@@ -158,6 +204,7 @@ mobile                 # Main entry point (dispatches to sub-scripts)
 - **Sub-100ms latency** — direct ADB commands
 - **Visible by default** — scrcpy shows live device screen
 - **Natural language friendly** — `tap-text "Login"` vs coordinates
+- **Works with ANY app** — Instagram, TikTok, Chrome, Banking, Games, etc.
 
 ## Requirements
 
@@ -178,7 +225,7 @@ argument-hint: "<command> [args...]"
 /path/to/mobile-automation/mobile "$@"
 ```
 
-Then in OpenCode: `/mobile launch com.matricks`
+Then in OpenCode: `/mobile launch com.instagram.android`
 
 ## Why Not Appium/MCP?
 
@@ -189,6 +236,7 @@ Then in OpenCode: `/mobile launch com.matricks`
 | Debugging | Watch live | Screenshot→decode→retry |
 | "Tap login" | `tap-text "Login"` | XPath + JSON + wait |
 | Resources | ~50MB | ~3GB |
+| App support | **All apps** | All apps |
 
 **Use Appium when:** CI testing, parallel devices, autonomous agents
-**Use this when:** You want to control a device interactively
+**Use this when:** You want to control a device interactively for **any task**
