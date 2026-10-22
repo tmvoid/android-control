@@ -1,0 +1,50 @@
+version: "3.8"
+
+services:
+  appium:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4723:4723"
+    environment:
+      - APPIUM_HOST=0.0.0.0
+      - APPIUM_PORT=4723
+    privileged: true
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"
+    volumes:
+      - ./screenshots:/app/screenshots
+      - ./recordings:/app/recordings
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: node dist/index.js
+    environment:
+      - APPIUM_HOST=appium
+      - APPIUM_PORT=4723
+      - ANDROID_DEVICE=emulator-5554
+    depends_on:
+      - appium
+    stdin_open: true
+    tty: true
+
+  # Optional: Android emulator
+  emulator:
+    image: budtmo/docker-android-x86-14.0
+    privileged: true
+    ports:
+      - "5555:5555"
+      - "6080:6080"
+      - "5900:5900"
+    environment:
+      - DEVICE=Samsung Galaxy S23
+      - ANDROID_API_LEVEL=34
+      - ARCH=x86_64
+    devices:
+      - "/dev/kvm:/dev/kvm"
+    volumes:
+      - ./emulator-data:/data

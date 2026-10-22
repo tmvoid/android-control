@@ -1,0 +1,18 @@
+{
+  "server": {
+    "port": 4723,
+    "host": "0.0.0.0",
+    "logLevel": "info",
+    "logTimestamp": true,
+    "allowCors": true,
+    "sessionOverride": true
+  },
+  "drivers": {
+    "uiautomator2": {
+      "serverInstallTimeout": 60000,
+      "serverLaunchTimeout": 60000,
+      "adbExecTimeout": 60000
+    }
+  },
+  "extensions": []
+}
