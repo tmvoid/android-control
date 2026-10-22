@@ -1,156 +1,129 @@
-# Mobile Automation MCP Server
+# Android Visible Control
 
-Model Context Protocol (MCP) server for Android mobile automation via Appium. Exposes device control as tools and resources that any MCP-compatible client (OpenCode, Claude Code, etc.) can use.
-
-## Architecture
+Lightweight Android automation for **human-in-the-loop** control. You type commands in OpenCode, they execute on a visible device you watch via `scrcpy`.
 
 ```
-┌─────────────────┐     MCP (stdio)      ┌──────────────────┐
-│   OpenCode      │ ◄──────────────────► │  MCP Server      │
-│   Agents        │   Tools & Resources  │  (this project)  │
-└─────────────────┘                      └────────┬─────────┘
-                                                   │
-                                    ┌──────────────┴──────────────┐
-                                    │       Appium Server         │
-                                    │       (port 4723)           │
-                                    │    UIAutomator2 Driver      │
-                                    └──────────────┬──────────────┘
-                                                   │
-                                    ┌──────────────┴──────────────┐
-                                    │     Android Device/Emulator │
-                                    │        (ADB + USB)          │
-                                    └─────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  OpenCode Chat                                              │
+│  You: "open Matricks and do daily challenge"               │
+│  Agent: [runs commands, you watch live]                    │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+           ┌──────────────┴──────────────┐
+           ▼                             ▼
+    ┌─────────────┐               ┌─────────────┐
+    │  ADB Cmds   │               │  scrcpy     │
+    │  (tap,      │               │  (60fps     │
+    │   swipe,    │               │   mirror)   │
+    │   input)    │               └─────────────┘
+    └─────────────┘
 ```
-
-## Features
-
-### Tools (Actions)
-| Tool | Description |
-|------|-------------|
-| `mobile_tap` | Tap at screen coordinates |
-| `mobile_swipe` | Swipe from point to point |
-| `mobile_input_text` | Type text into focused/specified element |
-| `mobile_screenshot` | Capture screenshot (returns base64 + saves file) |
-| `mobile_dump_hierarchy` | Get current UI hierarchy as XML |
-| `mobile_find_element` | Find element by id, xpath, accessibility, class, css |
-| `mobile_install_app` | Install APK |
-| `mobile_launch_app` | Launch app by package/activity |
-| `mobile_adb_shell` | Execute arbitrary ADB shell command |
-| `mobile_start_recording` | Start screen recording |
-| `mobile_stop_recording` | Stop recording, pull file |
-| `mobile_press_key` | Press hardware key (back, home, menu, etc.) |
-| `mobile_get_device_info` | Get device model, Android version, screen size, etc. |
-| `mobile_list_packages` | List installed packages |
-| `mobile_get_logcat` | Get logcat output |
-
-### Resources (State)
-| Resource | Description |
-|----------|-------------|
-| `mobile://device/info` | Device info as JSON |
-| `mobile://screen/current` | Current screenshot as PNG |
-| `mobile://hierarchy/current` | Current UI hierarchy as XML |
-| `mobile://logcat` | Recent logcat |
-| `mobile://packages` | Installed packages list |
 
 ## Quick Start
 
-### Prerequisites
-- Node.js 22+
-- Android device/emulator with USB debugging enabled
-- Appium 2.x installed globally: `npm install -g appium && appium driver install uiautomator2`
-
-### Local Development
-
 ```bash
-# Clone and install
-git clone <this-repo>
-cd mobile-automation
-npm install
+# 1. Install dependencies (Linux/macOS)
+./setup.sh
 
-# Start Appium server (in separate terminal)
-appium --port 4723
+# 2. Enable USB debugging on device, connect via USB
+# 3. Verify connection
+adb devices
 
-# Configure device (optional, defaults to emulator-5554)
-export ANDROID_UDID=<your-device-serial>
-export ANDROID_DEVICE=emulator-5554
+# 4. Start screen mirroring (opens window on your desktop)
+./mobile view
 
-# Run MCP server
-npm run dev
+# 5. In another terminal, control the device
+./mobile launch com.matricks
+./mobile tap-text "Daily Challenge"
+./mobile swipe 540 1800 540 600
 ```
 
-### Docker (Recommended)
+## Commands
 
+### Device
 ```bash
-# Start everything (Appium + MCP server)
-docker-compose up -d
-
-# Or with emulator
-docker-compose --profile emulator up -d
+./mobile device serial          # Get device serial
+./mobile device model           # Get device model
+./mobile device resolution      # Get screen resolution (e.g., 1080x2400)
+./mobile device list            # List all connected devices
 ```
 
-### OpenCode Integration
-
-Add to your `.opencode/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "mobile-automation": {
-      "command": "node",
-      "args": ["/path/to/mobile-automation/dist/index.js"],
-      "env": {
-        "APPIUM_HOST": "localhost",
-        "APPIUM_PORT": "4723",
-        "ANDROID_UDID": "your-device-serial"
-      }
-    }
-  }
-}
+### Screen Mirroring (scrcpy)
+```bash
+./mobile view                   # Start mirroring
+./mobile view --no-audio        # Without audio
+./mobile view --record out.mp4  # Record while mirroring
+./mobile view --fullscreen      # Fullscreen mode
 ```
 
-Or if using Docker:
-
-```json
-{
-  "mcpServers": {
-    "mobile-automation": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "--network=host", "mobile-automation-mcp:latest"],
-      "env": {
-        "APPIUM_HOST": "localhost",
-        "APPIUM_PORT": "4723"
-      }
-    }
-  }
-}
+### Interaction
+```bash
+./mobile tap <x> <y>                    # Tap coordinates
+./mobile swipe <x1> <y1> <x2> <y2> [ms] # Swipe (default 500ms)
+./mobile input "text here"              # Type text
+./mobile back                           # Back button
+./mobile home                           # Home button
+./mobile recent                         # Recent apps
+./mobile key <keycode>                  # Any keycode (3=home, 4=back, 66=enter, etc.)
 ```
 
-## Usage Examples
-
-### In OpenCode Agent
-```
-> Take a screenshot of the current screen
-> Tap the login button at coordinates (540, 1200)
-> Swipe up to scroll the feed
-> Input text "hello world" into the search field
-> Dump the UI hierarchy and find all clickable elements
-> Start recording, perform some actions, stop recording
+### Screen Capture
+```bash
+./mobile screenshot [path]          # Save screenshot (default /tmp/screenshot-TIME.png)
+./mobile record-start [path] [sec]  # Start recording (default 180s)
+./mobile record-stop [remote] [local]  # Stop & pull recording
 ```
 
-### Direct Tool Calls
-```json
-// Tap
-{"name": "mobile_tap", "arguments": {"x": 540, "y": 1200}}
+### UI Inspection (via UIAutomator)
+```bash
+./mobile hierarchy                  # Dump full UI XML
+./mobile find-text "login"          # Find elements containing text
+./mobile find-id "btn_login"        # Find by resource-id
+./mobile tap-text "Login"           # Find by text AND tap center
+./mobile tap-id "btn_login"         # Find by id AND tap center
+```
 
-// Swipe
-{"name": "mobile_swipe", "arguments": {"fromX": 540, "fromY": 1800, "toX": 540, "toY": 600, "duration": 800}}
+### Apps
+```bash
+./mobile launch <package> [activity]  # Launch app
+./mobile kill <package>               # Force stop
+./mobile clear <package>              # Clear data
+./mobile packages [filter]            # List packages
+./mobile activity                     # Current foreground activity
+```
 
-// Find element by accessibility ID
-{"name": "mobile_find_element", "arguments": {"strategy": "accessibility", "value": "login-button"}}
+## Examples
 
-// Install and launch app
-{"name": "mobile_install_app", "arguments": {"apkPath": "/path/to/app.apk"}}
-{"name": "mobile_launch_app", "arguments": {"packageName": "com.example.app"}}
+### Matricks Daily Challenge
+```bash
+# Start mirroring (keep this running)
+./mobile view
+
+# In another terminal:
+./mobile launch com.matricks
+# Wait for app to load...
+./mobile tap-text "Daily Challenge"
+# Solve puzzle...
+./mobile swipe 540 1800 540 600 800  # Swipe up slowly
+./mobile tap 540 1200                # Tap specific coordinate
+```
+
+### Generic Flow
+```bash
+# 1. See what's on screen
+./mobile hierarchy | grep -i "button"
+
+# 2. Tap by text
+./mobile tap-text "Continue"
+
+# 3. Input text
+./mobile input "my password"
+
+# 4. Tap login button
+./mobile tap-id "btn_login"
+
+# 5. Verify success
+./mobile activity
 ```
 
 ## Keycodes Reference
@@ -159,85 +132,63 @@ Or if using Docker:
 |-----|---------|
 | Back | 4 |
 | Home | 3 |
+| Recent Apps | 187 |
 | Menu | 82 |
 | Power | 26 |
 | Volume Up | 24 |
 | Volume Down | 25 |
 | Enter | 66 |
 | Search | 84 |
-| Recent Apps | 187 |
+| Camera | 27 |
 
-## Configuration
-
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `APPIUM_HOST` | `localhost` | Appium server host |
-| `APPIUM_PORT` | `4723` | Appium server port |
-| `ANDROID_DEVICE` | `emulator-5554` | Device name for capabilities |
-| `ANDROID_UDID` | - | Specific device UDID (optional) |
-
-## Project Structure
+## Architecture
 
 ```
-mobile-automation/
-├── src/
-│   ├── index.ts           # MCP server entry point
-│   └── mobile-automation.ts  # Core automation logic
-├── appium.config.json     # Appium configuration
-├── docker-compose.yml     # Docker services
-├── Dockerfile             # Container image
-├── package.json
-├── tsconfig.json
-└── .github/workflows/ci.yml
+mobile                 # Main entry point (dispatches to sub-scripts)
+├── scripts/
+│   ├── adb/
+│   │   ├── device.sh      # Device info queries
+│   │   └── interact.sh    # All interaction commands
+│   └── scrcpy/
+│       └── launch.sh      # scrcpy wrapper with defaults
+└── setup.sh               # Dependency installer
 ```
 
-## Development
+- **No Appium, no MCP server, no Docker** — just ADB + scrcpy
+- **Sub-100ms latency** — direct ADB commands
+- **Visible by default** — scrcpy shows live device screen
+- **Natural language friendly** — `tap-text "Login"` vs coordinates
 
-```bash
-# Install deps
-npm install
+## Requirements
 
-# Type-check
-npx tsc --noEmit
+- Android device with USB debugging enabled
+- `adb` (Android Platform Tools)
+- `scrcpy` (screen mirroring)
+- Linux/macOS (Windows works via WSL2)
 
-# Lint
-npm run lint
+## OpenCode Integration
 
-# Test
-npm test
-
-# Build
-npm run build
-
-# Run dev with hot reload
-npm run dev
+Add to `.opencode/commands/mobile.md`:
+```markdown
+---
+description: Control Android device
+argument-hint: "<command> [args...]"
+---
+#!/usr/bin/env bash
+/path/to/mobile-automation/mobile "$@"
 ```
 
-## Troubleshooting
+Then in OpenCode: `/mobile launch com.matricks`
 
-### Device not found
-```bash
-adb devices
-# Ensure your device appears and is authorized
-```
+## Why Not Appium/MCP?
 
-### Appium session fails
-```bash
-# Check Appium logs
-appium --log-level debug
+| Factor | This (ADB+scrcpy) | Appium+MCP |
+|--------|-------------------|------------|
+| Latency | ~50ms | ~3-5s |
+| Setup | 1 min | 30+ min |
+| Debugging | Watch live | Screenshot→decode→retry |
+| "Tap login" | `tap-text "Login"` | XPath + JSON + wait |
+| Resources | ~50MB | ~3GB |
 
-# Verify UIAutomator2 driver
-appium driver list
-```
-
-### Permission denied on USB
-```bash
-# On Linux, add udev rules or run with --privileged in Docker
-sudo usermod -aG plugdev $USER
-```
-
-## License
-
-MIT
+**Use Appium when:** CI testing, parallel devices, autonomous agents
+**Use this when:** You want to control a device interactively

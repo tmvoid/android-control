@@ -30,6 +30,10 @@ screenshots/
 recordings/
 emulator-data/
 
+# Mobile automation outputs
+/tmp/screenshot-*.png
+/tmp/recording-*.mp4
+
 # Environment
 .env
 .env.local

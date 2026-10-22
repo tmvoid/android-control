@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Mobile Control Runner - Main entry point for OpenCode
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ADB_SCRIPT="$SCRIPT_DIR/scripts/adb/interact.sh"
+DEVICE_SCRIPT="$SCRIPT_DIR/scripts/adb/device.sh"
+SCRCPY_SCRIPT="$SCRIPT_DIR/scripts/scrcpy/launch.sh"
+
+# Export serial for all scripts
+export ANDROID_SERIAL="${ANDROID_SERIAL:-$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')}"
+
+usage() {
+  cat <<EOF
+Mobile Control - Visible Android automation from OpenCode
+
+Usage: $0 <command> [args...]
+
+Device:
+  device serial           Get device serial
+  device model            Get device model
+  device version          Get Android version
+  device resolution       Get screen resolution
+  device list             List all devices
+
+Screen (scrcpy):
+  view                    Start scrcpy mirroring
+  view --no-audio         Mirror without audio
+  view --record file.mp4  Mirror and record
+  view --fullscreen       Fullscreen mode
+
+Interaction:
+  tap <x> <y>             Tap coordinates
+  swipe <x1> <y1> <x2> <y2> [duration]  Swipe
+  input <text>            Type text
+  back                    Back button
+  home                    Home button
+  recent                  Recent apps
+  menu                    Menu button
+  power                   Power button
+  volup                   Volume up
+  voldown                 Volume down
+  enter                   Enter key
+  key <keycode>           Send keycode
+
+Screen capture:
+  screenshot [path]       Take screenshot
+  record-start [path] [time]  Start recording
+  record-stop [remote] [local]  Stop recording
+
+UI inspection:
+  hierarchy               Dump UI hierarchy
+  find-text <text>        Find element by text
+  find-id <id>            Find element by resource-id
+  tap-text <text>         Tap element by text
+  tap-id <id>             Tap element by resource-id
+
+Apps:
+  launch <package> [activity]  Launch app
+  kill <package>            Kill app
+  clear <package>           Clear app data
+  packages [filter]         List packages
+  activity                  Get current activity
+
+Examples:
+  $0 view                           # Start mirroring
+  $0 launch com.matricks            # Open Matricks
+  $0 tap-text "Daily Challenge"     # Tap button by text
+  $0 swipe 540 1800 540 600         # Swipe up
+  $0 screenshot /tmp/matricks.png   # Save screenshot
+
+Environment:
+  ANDROID_SERIAL    Device serial (auto-detected if not set)
+EOF
+}
+
+# Dispatch
+case "${1:-}" in
+  ""|--help|-h) usage ;;
+  device) "$DEVICE_SCRIPT" "${2:-}" "${3:-}" ;;
+  view) shift; "$SCRCPY_SCRIPT" "$@" ;;
+  tap|swipe|input|key|back|home|recent|menu|power|volup|voldown|enter|screenshot|record-start|record-stop|hierarchy|find-text|find-id|tap-text|tap-id|launch|kill|clear|packages|activity)
+    "$ADB_SCRIPT" "$@"
+    ;;
+  *)
+    echo "Unknown command: $1" >&2
+    usage
+    exit 1
+    ;;
+esac
